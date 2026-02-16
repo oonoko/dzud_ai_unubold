@@ -14,32 +14,32 @@
     "2": "Өндөр",
     "3": "Маш өндөр"
   },
-  "accuracy": 0.9591503267973857,
-  "cv_score": 0.9485238512582947,
+  "accuracy": 0.9379084967320261,
+  "cv_score": 0.9293259880639372,
   "feature_importance": [
     {
       "feature": "avg_temp",
-      "importance": 0.35815953623075913
+      "importance": 0.3609356956875753
     },
     {
       "feature": "min_temp",
-      "importance": 0.2688444177631066
-    },
-    {
-      "feature": "precip_sum",
-      "importance": 0.10964217865276871
+      "importance": 0.3218185175625144
     },
     {
       "feature": "wind_speed",
-      "importance": 0.0970812576615989
+      "importance": 0.12308533232197805
     },
     {
-      "feature": "livestock_count",
-      "importance": 0.08761039039396365
+      "feature": "precip_sum",
+      "importance": 0.10289719622573529
     },
     {
       "feature": "snowfall_sum",
-      "importance": 0.07866221929780312
+      "importance": 0.06075837965920483
+    },
+    {
+      "feature": "livestock_count",
+      "importance": 0.030504878542992213
     }
   ],
   "note": "Experimental model - livestock data is synthetic/proxy"
