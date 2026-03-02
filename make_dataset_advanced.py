@@ -34,8 +34,26 @@ print(livestock_total)
 livestock_total['livestock_change'] = livestock_total['total_livestock'].diff()
 livestock_total['livestock_change_pct'] = livestock_total['total_livestock'].pct_change() * 100
 
-# Зудын жил тодорхойлох: малын тоо 10%-аас их буурсан
+# Зудын жил: эхлээд data-driven (мал 10% буурсан), дараа нь албан ёсны зудын жил байвал баяжуулна
 livestock_total['dzud_year'] = (livestock_total['livestock_change_pct'] < -10).astype(int)
+
+# Label баяжуулах: official_dzud_years.csv байвал унших (year, dzud_official 0/1)
+# ХХААХҮЯ, онцгой байдал гэх мэт эх сурвалжаас бөглөнө
+official_dzud_path = 'official_dzud_years.csv'
+try:
+    official = pd.read_csv(official_dzud_path)
+    if 'year' in official.columns and 'dzud_official' in official.columns:
+        official = official[['year', 'dzud_official']].drop_duplicates('year')
+        livestock_total = livestock_total.merge(official, on='year', how='left')
+        livestock_total['dzud_official'] = livestock_total['dzud_official'].fillna(-1).astype(int)
+        # Албан ёсны 1 байвал зуд гэж тэмдэглэх; бусад тохиолдолд өмнөх 10% rule хадгалах
+        livestock_total.loc[livestock_total['dzud_official'] == 1, 'dzud_year'] = 1
+        livestock_total = livestock_total.drop(columns=['dzud_official'], errors='ignore')
+        print("   Label enriched with official_dzud_years.csv")
+except FileNotFoundError:
+    pass
+except Exception as e:
+    print(f"   Note: could not load {official_dzud_path}: {e}")
 
 print("\n3. Dzud years identified:")
 print(livestock_total[['year', 'total_livestock', 'livestock_change_pct', 'dzud_year']])

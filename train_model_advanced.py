@@ -48,21 +48,35 @@ if len(class_counts) > 1:
 # 3. Handle missing values
 X = X.fillna(X.mean())
 
-# 4. Train/test split
-if len(class_counts) > 1 and class_counts.min() >= 2:
-    # Stratified split if possible
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-else:
-    # Regular split if not enough samples for stratification
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+# 4. Train/test split — цагийн дарааллаар (жилээр салгах): өмнөх жилүүд train, сүүлийн 2 жил test
+TEST_YEAR_START = 2023  # 2023 талаас эхлэн test set
+years = sorted(df['year'].unique())
+test_years = [y for y in years if y >= TEST_YEAR_START]
+train_years = [y for y in years if y < TEST_YEAR_START]
 
-print(f"\n3. Train/test split:")
-print(f"   Train: {len(X_train)} rows")
-print(f"   Test: {len(X_test)} rows")
+if len(test_years) >= 1 and len(train_years) >= 1:
+    train_mask = df['year'].isin(train_years)
+    test_mask = df['year'].isin(test_years)
+    X_train = X.loc[train_mask].copy()
+    X_test = X.loc[test_mask].copy()
+    y_train = y.loc[train_mask].copy()
+    y_test = y.loc[test_mask].copy()
+    print(f"\n3. Train/test split (time-based by year):")
+    print(f"   Train years: {train_years} -> {len(X_train)} rows")
+    print(f"   Test years:  {test_years} -> {len(X_test)} rows")
+else:
+    # Fallback: not enough years for time split
+    if len(class_counts) > 1 and class_counts.min() >= 2:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+    print(f"\n3. Train/test split (random fallback):")
+    print(f"   Train: {len(X_train)} rows")
+    print(f"   Test: {len(X_test)} rows")
 
 # 5. Feature scaling
 scaler = StandardScaler()

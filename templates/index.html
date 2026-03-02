@@ -113,6 +113,19 @@
             transform: translateY(0);
         }
         
+        .map-picker {
+            height: 200px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            border: 2px solid #dee2e6;
+            cursor: crosshair;
+            background: #e5e7eb;
+        }
+        .map-picker-hint {
+            font-size: 0.85em;
+            color: #6b7280;
+            margin-top: 4px;
+        }
         #map {
             height: 400px;
             border-radius: 12px;
@@ -276,6 +289,12 @@
             <div class="sidebar">
                 <h3 style="margin-bottom: 20px;">📍 Мэдээлэл оруулах</h3>
                 
+                <div class="form-group">
+                    <label>Байршил — зураг дээр дарж сонгоно уу</label>
+                    <div id="mapPicker" class="map-picker"></div>
+                    <p class="map-picker-hint">🗺️ Өмнөговь дээр хүссэн цэгээ дарна уу</p>
+                </div>
+                
                 <form id="riskForm">
                     <div class="form-group">
                         <label>Өргөрөг (Latitude)</label>
@@ -389,11 +408,33 @@
     <script>
         let map;
         let marker;
+        let mapPicker;
+        let pickerMarker;
         let riskCircles = [];
         let soumPolygons = [];
         let soumRiskData = {};
         
-        // Initialize map
+        // Sidebar: газраас дарж байршил сонгох зураг
+        function initMapPicker() {
+            const defaultLat = 43.5;
+            const defaultLon = 104.4;
+            mapPicker = L.map('mapPicker').setView([defaultLat, defaultLon], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(mapPicker);
+            pickerMarker = L.marker([defaultLat, defaultLon]).addTo(mapPicker)
+                .bindPopup('Таны сонгосон байршил');
+            mapPicker.on('click', function(e) {
+                const lat = e.latlng.lat;
+                const lon = e.latlng.lng;
+                document.getElementById('lat').value = lat.toFixed(6);
+                document.getElementById('lon').value = lon.toFixed(6);
+                pickerMarker.setLatLng(e.latlng);
+                pickerMarker.getPopup().setContent('Таны сонгосон байршил').openOn(mapPicker);
+            });
+        }
+        
+        // Initialize map (results дээрх том зураг)
         function initMap(lat, lon) {
             if (!map) {
                 map = L.map('map').setView([lat, lon], 7);
@@ -678,6 +719,22 @@
                     
                     recsDiv.appendChild(div);
                 }
+            }
+        }
+        
+        // Сайдбар дээрх газраас сонгох зургийг эхлүүлэх
+        initMapPicker();
+        
+        // Өргөрөг/уртраг гараар өөрчлөхөд зураг дээрх цэг шилжүүлэх
+        document.getElementById('lat').addEventListener('change', updatePickerFromInputs);
+        document.getElementById('lon').addEventListener('change', updatePickerFromInputs);
+        function updatePickerFromInputs() {
+            if (!mapPicker || !pickerMarker) return;
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            if (!isNaN(lat) && !isNaN(lon)) {
+                pickerMarker.setLatLng([lat, lon]);
+                mapPicker.setView([lat, lon], mapPicker.getZoom());
             }
         }
     </script>

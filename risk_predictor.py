@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """
-Dzud Risk Predictor - MVP
-Хэрэглэгч координат + малын тоо оруулахад эрсдэл тооцоолно
+Dzud Risk Predictor - MVP + ML Hybrid
+Хэрэглэгч координат + малын тоо оруулахад эрсдэл тооцоолно.
+ML модель байвал rule-based + ML магадлалыг 50/50 нэгтгэн hybrid эрсдэл гаргана.
 """
 
 import pandas as pd
 import numpy as np
 import joblib
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
+
+# ML загварын feature-үүд (train_model_advanced.py-тай ижил дараалал)
+ML_FEATURE_COLS = [
+    'avg_temp', 'min_temp', 'wind_speed', 'snowfall_sum', 'precip_sum',
+    'avg_temp_lag1', 'min_temp_lag1', 'wind_speed_lag1', 'snowfall_sum_lag1', 'precip_sum_lag1',
+    'avg_temp_lag2', 'min_temp_lag2', 'wind_speed_lag2', 'snowfall_sum_lag2', 'precip_sum_lag2',
+    'is_winter', 'cold_index', 'snow_cumulative', 'precip_deficit',
+    'extreme_cold', 'extreme_wind', 'heavy_snow',
+    'total_livestock', 'livestock_change_pct'
+]
+
 
 class DzudRiskPredictor:
     def __init__(self):
@@ -21,9 +33,14 @@ class DzudRiskPredictor:
             self.model = joblib.load('dzud_risk_model_advanced.pkl')
             self.scaler = joblib.load('scaler_advanced.pkl')
             self.has_model = True
-        except:
+        except Exception:
+            self.model = None
+            self.scaler = None
             self.has_model = False
             print("⚠️  Model not found, using rule-based system")
+        
+        # Livestock by year (for ML features: total_livestock, livestock_change_pct)
+        self.livestock_by_year: Optional[Dict[int, Tuple[float, float]]] = self._load_livestock_by_year()
         
         # Livestock vulnerability weights (эмзэг байдал)
         self.livestock_weights = {
@@ -33,6 +50,27 @@ class DzudRiskPredictor:
             'horse': 0.8,    # адуу - тэсвэртэй
             'camel': 0.6     # тэмээ - хамгийн тэсвэртэй
         }
+    
+    def _load_livestock_by_year(self) -> Optional[Dict[int, Tuple[float, float]]]:
+        """Load yearly livestock for Ömnögovi: year -> (total_livestock, livestock_change_pct)"""
+        try:
+            livestock = pd.read_csv('livestock_omnogovi.csv')
+            omnogovi = livestock[
+                (livestock['Бүс'].str.strip() == 'Өмнөговь') |
+                (livestock['Бүс'] == '               Өмнөговь')
+            ]
+            if 'Малын төрөл' in omnogovi.columns:
+                omnogovi = omnogovi[omnogovi['Малын төрөл'] == 'Бүгд']
+            omnogovi = omnogovi[['Он', 'Утга']].copy()
+            omnogovi.columns = ['year', 'total_livestock']
+            omnogovi = omnogovi.sort_values('year').drop_duplicates('year')
+            omnogovi['livestock_change_pct'] = omnogovi['total_livestock'].pct_change() * 100
+            out = {}
+            for _, row in omnogovi.iterrows():
+                out[int(row['year'])] = (float(row['total_livestock']), float(row['livestock_change_pct']) if pd.notna(row['livestock_change_pct']) else 0.0)
+            return out
+        except Exception:
+            return None
     
     def find_nearest_location(self, lat: float, lon: float) -> Dict:
         """Find nearest weather station"""
@@ -154,37 +192,109 @@ class DzudRiskPredictor:
         
         return exposure_score, total_count
     
-    def calculate_final_risk(self, weather_risk: float, exposure_score: float) -> Dict:
-        """Calculate final risk score and level"""
-        # Weighted combination
-        final_score = (weather_risk * 0.7) + (exposure_score * 0.3)
-        
-        # Determine risk level
-        if final_score < 25:
-            level = 0
-            label = "Бага"
-            color = "green"
-        elif final_score < 50:
-            level = 1
-            label = "Дунд"
-            color = "yellow"
-        elif final_score < 75:
-            level = 2
-            label = "Өндөр"
-            color = "orange"
+    def _score_to_level(self, score: float) -> Dict:
+        """Convert 0-100 score to level, label, color"""
+        if score < 25:
+            level, label, color = 0, "Бага", "green"
+        elif score < 50:
+            level, label, color = 1, "Дунд", "yellow"
+        elif score < 75:
+            level, label, color = 2, "Өндөр", "orange"
         else:
-            level = 3
-            label = "Маш өндөр"
-            color = "red"
-        
+            level, label, color = 3, "Маш өндөр", "red"
+        return {'level': level, 'label': label, 'color': color}
+    
+    def calculate_final_risk(self, weather_risk: float, exposure_score: float) -> Dict:
+        """Calculate final risk score and level (rule-based)"""
+        final_score = (weather_risk * 0.7) + (exposure_score * 0.3)
+        lev = self._score_to_level(final_score)
         return {
             'score': round(final_score, 1),
-            'level': level,
-            'label': label,
-            'color': color,
+            'level': lev['level'],
+            'label': lev['label'],
+            'color': lev['color'],
             'weather_risk': round(weather_risk, 1),
             'exposure_score': round(exposure_score, 1)
         }
+    
+    def _build_ml_features(self, soum: str, year: int, month: int) -> Optional[pd.DataFrame]:
+        """Build 24 ML features for (soum, year, month). Returns one row DataFrame or None."""
+        df = self.weather_data[self.weather_data['soum'] == soum].sort_values(['year', 'month']).copy()
+        if df.empty:
+            return None
+        row = df[(df['year'] == year) & (df['month'] == month)]
+        if row.empty:
+            return None
+        row = row.iloc[0]
+        # Previous month (lag1), two months back (lag2)
+        def prev_month(y: int, m: int, k: int):
+            for _ in range(k):
+                if m <= 1:
+                    y, m = y - 1, 12
+                else:
+                    m -= 1
+            return y, m
+        y1, m1 = prev_month(year, month, 1)
+        y2, m2 = prev_month(year, month, 2)
+        row1 = df[(df['year'] == y1) & (df['month'] == m1)]
+        row2 = df[(df['year'] == y2) & (df['month'] == m2)]
+        if row1.empty or row2.empty:
+            return None
+        row1, row2 = row1.iloc[0], row2.iloc[0]
+        # Snow cumulative for this year up to this month
+        year_snow = df[(df['year'] == year) & (df['month'] <= month)]['snowfall_sum'].sum()
+        # Livestock for this year
+        if not self.livestock_by_year or year not in self.livestock_by_year:
+            return None
+        total_livestock, livestock_change_pct = self.livestock_by_year[year]
+        cold_index = float(row['min_temp']) - (float(row['wind_speed']) * 0.5)
+        is_winter = 1 if month in (11, 12, 1, 2, 3) else 0
+        precip_deficit = 20.0 - float(row['precip_sum'])
+        data = {
+            'avg_temp': float(row['avg_temp']),
+            'min_temp': float(row['min_temp']),
+            'wind_speed': float(row['wind_speed']),
+            'snowfall_sum': float(row['snowfall_sum']),
+            'precip_sum': float(row['precip_sum']),
+            'avg_temp_lag1': float(row1['avg_temp']),
+            'min_temp_lag1': float(row1['min_temp']),
+            'wind_speed_lag1': float(row1['wind_speed']),
+            'snowfall_sum_lag1': float(row1['snowfall_sum']),
+            'precip_sum_lag1': float(row1['precip_sum']),
+            'avg_temp_lag2': float(row2['avg_temp']),
+            'min_temp_lag2': float(row2['min_temp']),
+            'wind_speed_lag2': float(row2['wind_speed']),
+            'snowfall_sum_lag2': float(row2['snowfall_sum']),
+            'precip_sum_lag2': float(row2['precip_sum']),
+            'is_winter': is_winter,
+            'cold_index': cold_index,
+            'snow_cumulative': year_snow,
+            'precip_deficit': precip_deficit,
+            'extreme_cold': 1 if float(row['min_temp']) < -25 else 0,
+            'extreme_wind': 1 if float(row['wind_speed']) > 18 else 0,
+            'heavy_snow': 1 if float(row['snowfall_sum']) > 10 else 0,
+            'total_livestock': total_livestock,
+            'livestock_change_pct': livestock_change_pct
+        }
+        return pd.DataFrame([data])[ML_FEATURE_COLS]
+    
+    def _predict_ml_probability(self, soum: str, year: int, month: int) -> Optional[float]:
+        """Return P(dzud=1) from ML model, or None if not available."""
+        if not self.has_model or self.model is None or self.scaler is None:
+            return None
+        X = self._build_ml_features(soum, year, month)
+        if X is None or X.empty:
+            return None
+        try:
+            model_name = type(self.model).__name__
+            if 'Logistic' in model_name:
+                X_scaled = self.scaler.transform(X)
+                proba = self.model.predict_proba(X_scaled)[0, 1]
+            else:
+                proba = self.model.predict_proba(X)[0, 1]
+            return float(proba)
+        except Exception:
+            return None
     
     def get_recommendations(self, risk_level: int, livestock: Dict, weather: Dict) -> Dict:
         """Generate action recommendations by livestock type"""
@@ -252,23 +362,38 @@ class DzudRiskPredictor:
         return recommendations
     
     def predict(self, lat: float, lon: float, livestock: Dict, month: int = None) -> Dict:
-        """Main prediction function"""
-        # Get weather data
+        """Main prediction function. Uses hybrid (rule-based + ML) when model is available."""
         weather = self.get_current_weather(lat, lon, month)
-        
-        # Calculate weather risk
         weather_risk, weather_reasons = self.calculate_weather_risk(weather)
-        
-        # Calculate livestock exposure
         exposure_score, total_livestock = self.calculate_livestock_exposure(livestock)
-        
-        # Calculate final risk
         risk = self.calculate_final_risk(weather_risk, exposure_score)
         
-        # Get recommendations
-        recommendations = self.get_recommendations(risk['level'], livestock, weather)
+        # Hybrid: combine rule-based score with ML probability (50/50) when available
+        ml_prob = self._predict_ml_probability(
+            weather['location']['soum'],
+            weather['year'],
+            weather['month']
+        )
+        if ml_prob is not None:
+            rule_score = risk['score']
+            ml_score = ml_prob * 100
+            hybrid_score = 0.5 * rule_score + 0.5 * ml_score
+            lev = self._score_to_level(hybrid_score)
+            risk = {
+                'score': round(hybrid_score, 1),
+                'level': lev['level'],
+                'label': lev['label'],
+                'color': lev['color'],
+                'weather_risk': risk['weather_risk'],
+                'exposure_score': risk['exposure_score'],
+                'ml_probability': round(ml_prob, 4),
+                'risk_source': 'hybrid'
+            }
+        else:
+            risk['ml_probability'] = None
+            risk['risk_source'] = 'rule_based'
         
-        # Compile result
+        recommendations = self.get_recommendations(risk['level'], livestock, weather)
         result = {
             'location': weather['location'],
             'weather': weather,
@@ -278,12 +403,11 @@ class DzudRiskPredictor:
                 'breakdown': livestock,
                 'exposure_score': exposure_score
             },
-            'top_reasons': weather_reasons[:3],  # Top 3
+            'top_reasons': weather_reasons[:3],
             'recommendations': recommendations,
-            'confidence': 'дунд' if self.has_model else 'бага',
+            'confidence': 'өндөр' if risk.get('risk_source') == 'hybrid' else ('дунд' if self.has_model else 'бага'),
             'note': 'Энэ нь туршилтын тооцоолол юм. Бодит мэдээлэл дээр үндэслэнэ үү.'
         }
-        
         return result
 
 

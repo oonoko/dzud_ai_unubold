@@ -6,6 +6,7 @@ Dzud Risk API - Flask Web Service
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from risk_predictor import DzudRiskPredictor
+from daily_forecast_predictor import DailyDzudForecast
 import json
 
 app = Flask(__name__)
@@ -13,6 +14,7 @@ CORS(app)  # Enable CORS for frontend
 
 # Initialize predictor
 predictor = DzudRiskPredictor()
+forecaster = DailyDzudForecast()
 
 @app.route('/')
 def index():
@@ -132,6 +134,78 @@ def health():
         'model_loaded': predictor.has_model,
         'weather_data_rows': len(predictor.weather_data)
     })
+
+@app.route('/api/forecast', methods=['POST'])
+def get_forecast():
+    """
+    Get daily dzud risk forecast for next 7-14 days
+    
+    Request body:
+    {
+        "lat": 43.5,
+        "lon": 104.4,
+        "livestock": 200,
+        "days": 14  (optional, default 14)
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        lat = float(data.get('lat', 43.57))
+        lon = float(data.get('lon', 104.43))
+        livestock = float(data.get('livestock', 200))
+        days = int(data.get('days', 14))
+        
+        # Get forecast
+        results_df = forecaster.forecast(lat, lon, livestock, days, verbose=False)
+        
+        if results_df is None:
+            return jsonify({'error': 'Failed to get weather forecast'}), 500
+        
+        # Convert to JSON-friendly format
+        forecast_data = []
+        for _, row in results_df.iterrows():
+            forecast_data.append({
+                'date': row['date'].strftime('%Y-%m-%d'),
+                'day_name': row['day_name'],
+                'temp_min': round(row['temp_min'], 1),
+                'temp_max': round(row['temp_max'], 1),
+                'temp_mean': round(row['temp_mean'], 1),
+                'wind_max': round(row['wind_max'], 1),
+                'snowfall': round(row['snowfall'], 1),
+                'precip': round(row['precip'], 1),
+                'risk_score': round(row['risk_score'], 0),
+                'risk_level': int(row['risk_level']),
+                'risk_label': row['risk_label'],
+                'risk_color': row['risk_color'],
+                'reasons': row['reasons']
+            })
+        
+        # Summary
+        high_risk_days = len(results_df[results_df['risk_level'] >= 2])
+        coldest_day = results_df.loc[results_df['temp_min'].idxmin()]
+        windiest_day = results_df.loc[results_df['wind_max'].idxmax()]
+        
+        summary = {
+            'total_days': len(results_df),
+            'high_risk_days': high_risk_days,
+            'coldest_day': {
+                'date': coldest_day['date'].strftime('%Y-%m-%d'),
+                'temp': round(coldest_day['temp_min'], 1)
+            },
+            'windiest_day': {
+                'date': windiest_day['date'].strftime('%Y-%m-%d'),
+                'wind': round(windiest_day['wind_max'], 1)
+            }
+        }
+        
+        return jsonify({
+            'forecast': forecast_data,
+            'summary': summary
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("🚀 Starting Dzud Risk API...")
