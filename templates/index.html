@@ -307,8 +307,27 @@
                     </div>
                     
                     <div class="form-group">
+                        <label>Огноо сонгох</label>
+                        <select id="dateType" onchange="toggleDateInputs()">
+                            <option value="month">Сарын дундаж</option>
+                            <option value="date">Тодорхой өдөр</option>
+                            <option value="forecast">Ирээдүйн таамаглал</option>
+                        </select>
+                    </div>
+                    
+                    <div id="monthInput" class="form-group">
                         <label>Сар (1-12)</label>
                         <input type="number" id="month" min="1" max="12" value="1">
+                    </div>
+                    
+                    <div id="dateInput" class="form-group" style="display: none;">
+                        <label>Огноо (2010-2024)</label>
+                        <input type="date" id="specificDate" value="2023-01-15" min="2010-01-01" max="2024-12-31">
+                    </div>
+                    
+                    <div id="forecastInput" class="form-group" style="display: none;">
+                        <label>Дараагийн хэдэн хоног</label>
+                        <input type="number" id="forecastDays" min="1" max="14" value="7">
                     </div>
                     
                     <h4 style="margin: 25px 0 15px;">🐑 Малын тоо</h4>
@@ -413,6 +432,14 @@
         let riskCircles = [];
         let soumPolygons = [];
         let soumRiskData = {};
+        
+        // Toggle date inputs based on selection
+        function toggleDateInputs() {
+            const dateType = document.getElementById('dateType').value;
+            document.getElementById('monthInput').style.display = dateType === 'month' ? 'block' : 'none';
+            document.getElementById('dateInput').style.display = dateType === 'date' ? 'block' : 'none';
+            document.getElementById('forecastInput').style.display = dateType === 'forecast' ? 'block' : 'none';
+        }
         
         // Sidebar: газраас дарж байршил сонгох зураг
         function initMapPicker() {
@@ -603,7 +630,7 @@
             
             const lat = parseFloat(document.getElementById('lat').value);
             const lon = parseFloat(document.getElementById('lon').value);
-            const month = parseInt(document.getElementById('month').value);
+            const dateType = document.getElementById('dateType').value;
             
             const livestock = {
                 sheep: parseInt(document.getElementById('sheep').value) || 0,
@@ -618,27 +645,108 @@
             document.getElementById('results').classList.add('hidden');
             
             try {
-                // Get main prediction
-                const response = await fetch('/api/predict', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ lat, lon, livestock, month })
-                });
+                let data, riskMapData;
                 
-                const data = await response.json();
-                
-                // Get risk map for all locations
-                const riskMapResponse = await fetch('/api/risk-map', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ livestock, month })
-                });
-                
-                const riskMapData = await riskMapResponse.json();
+                if (dateType === 'month') {
+                    // Monthly average
+                    const month = parseInt(document.getElementById('month').value);
+                    const response = await fetch('/api/predict', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ lat, lon, livestock, month })
+                    });
+                    data = await response.json();
+                    
+                    const riskMapResponse = await fetch('/api/risk-map', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ livestock, month })
+                    });
+                    riskMapData = await riskMapResponse.json();
+                    
+                } else if (dateType === 'date') {
+                    // Specific historical date
+                    const specificDate = document.getElementById('specificDate').value;
+                    const totalLivestock = Object.values(livestock).reduce((a, b) => a + b, 0);
+                    
+                    const response = await fetch('/api/historical', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ 
+                            lat, lon, 
+                            start_date: specificDate, 
+                            end_date: specificDate,
+                            livestock: totalLivestock
+                        })
+                    });
+                    const histData = await response.json();
+                    
+                    if (histData.historical && histData.historical.length > 0) {
+                        const dayData = histData.historical[0];
+                        data = {
+                            location: { soum: dayData.soum, aimag: 'Өмнөговь', lat, lon, distance_km: 0 },
+                            weather: {
+                                month: new Date(specificDate).getMonth() + 1,
+                                year: new Date(specificDate).getFullYear(),
+                                avg_temp: dayData.temp_avg,
+                                min_temp: dayData.temp_min,
+                                wind_speed: dayData.wind_speed,
+                                snowfall_sum: dayData.snowfall,
+                                precip_sum: dayData.precip
+                            },
+                            risk: {
+                                score: dayData.risk_score,
+                                level: dayData.risk_level,
+                                label: dayData.risk_label,
+                                color: dayData.risk_color
+                            },
+                            livestock: { total: totalLivestock, breakdown: livestock },
+                            top_reasons: [`${specificDate} өдрийн түүхэн дата`],
+                            recommendations: { general: ['Түүхэн өгөгдөл дээр үндэслэсэн'] },
+                            confidence: 'түүхэн дата'
+                        };
+                    }
+                    riskMapData = [];
+                    
+                } else if (dateType === 'forecast') {
+                    // Future forecast
+                    const days = parseInt(document.getElementById('forecastDays').value);
+                    const totalLivestock = Object.values(livestock).reduce((a, b) => a + b, 0);
+                    
+                    const response = await fetch('/api/forecast', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ lat, lon, livestock: totalLivestock, days })
+                    });
+                    const forecastData = await response.json();
+                    
+                    if (forecastData.forecast && forecastData.forecast.length > 0) {
+                        const firstDay = forecastData.forecast[0];
+                        data = {
+                            location: { soum: 'Таамаглал', aimag: 'Өмнөговь', lat, lon, distance_km: 0 },
+                            weather: {
+                                month: new Date(firstDay.date).getMonth() + 1,
+                                year: new Date(firstDay.date).getFullYear(),
+                                avg_temp: firstDay.temp_mean,
+                                min_temp: firstDay.temp_min,
+                                wind_speed: firstDay.wind_max,
+                                snowfall_sum: firstDay.snowfall,
+                                precip_sum: firstDay.precip
+                            },
+                            risk: {
+                                score: firstDay.risk_score,
+                                level: firstDay.risk_level,
+                                label: firstDay.risk_label,
+                                color: firstDay.risk_color
+                            },
+                            livestock: { total: totalLivestock, breakdown: livestock },
+                            top_reasons: firstDay.reasons || [],
+                            recommendations: { general: [`${days} хоногийн таамаглал`] },
+                            confidence: 'таамаглал'
+                        };
+                    }
+                    riskMapData = [];
+                }
                 
                 // Hide loading
                 document.getElementById('loading').classList.remove('active');
