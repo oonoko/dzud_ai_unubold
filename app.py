@@ -23,6 +23,11 @@ def index():
     """Home page"""
     return render_template('index.html')
 
+@app.route('/daily')
+def daily():
+    """Daily view page"""
+    return render_template('daily.html')
+
 @app.route('/api/predict', methods=['POST'])
 def predict():
     """

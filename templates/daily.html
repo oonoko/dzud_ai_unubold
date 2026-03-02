@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Өдөр тутмын эрсдэл - Зудын систем</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .nav {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .nav button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        
+        .nav button.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .nav button:not(.active) {
+            background: white;
+            color: #333;
+        }
+        
+        .nav button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: transform 0.3s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .results {
+            margin-top: 30px;
+        }
+        
+        .summary-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-card h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .summary-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .summary-item .label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .summary-item .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .daily-list {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .day-card {
+            background: white;
+            border-left: 5px solid;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .day-card.risk-0 { border-color: #4caf50; }
+        .day-card.risk-1 { border-color: #ffeb3b; }
+        .day-card.risk-2 { border-color: #ff9800; }
+        .day-card.risk-3 { border-color: #f44336; }
+        
+        .day-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .day-date {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .risk-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .risk-badge.risk-0 { background: #4caf50; }
+        .risk-badge.risk-1 { background: #ffeb3b; color: #333; }
+        .risk-badge.risk-2 { background: #ff9800; }
+        .risk-badge.risk-3 { background: #f44336; }
+        
+        .day-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .detail-item {
+            font-size: 0.95em;
+        }
+        
+        .detail-item .icon {
+            margin-right: 5px;
+        }
+        
+        .reasons {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Өдөр тутмын зудын эрсдэл</h1>
+            <p>Түүхэн болон ирээдүйн өдрүүдийн эрсдэл</p>
+        </div>
+        
+        <div class="nav">
+            <button onclick="location.href='/'" class="nav-btn">🗺️ Газрын зураг</button>
+            <button class="nav-btn active">📅 Өдөр тутам</button>
+        </div>
+        
+        <div class="content">
+            <div class="input-row">
+                <div class="input-group">
+                    <label>Өргөрөг (Latitude)</label>
+                    <input type="number" id="lat" value="43.57" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>Уртраг (Longitude)</label>
+                    <input type="number" id="lon" value="104.43" step="0.01">
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <label>Малын тоо</label>
+                <input type="number" id="livestock" value="200" min="0">
+            </div>
+            
+            <div class="input-group">
+                <label>Харах төрөл</label>
+                <select id="viewType" onchange="toggleDateInputs()">
+                    <option value="forecast">Ирээдүйн таамаглал (дараагийн 7-14 хоног)</option>
+                    <option value="historical">Түүхэн өдрүүд (2010-2024)</option>
+                </select>
+            </div>
+            
+            <div id="forecastInputs">
+                <div class="input-group">
+                    <label>Хэдэн хоног</label>
+                    <input type="number" id="days" value="7" min="1" max="14">
+                </div>
+            </div>
+            
+            <div id="historicalInputs" style="display: none;">
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Эхлэх огноо</label>
+                        <input type="date" id="startDate" value="2023-01-01">
+                    </div>
+                    <div class="input-group">
+                        <label>Дуусах огноо</label>
+                        <input type="date" id="endDate" value="2023-01-31">
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn" onclick="loadData()">🔍 Харах</button>
+            
+            <div id="results" class="results"></div>
+        </div>
+    </div>
+    
+    <script>
+        function toggleDateInputs() {
+            const viewType = document.getElementById('viewType').value;
+            document.getElementById('forecastInputs').style.display = 
+                viewType === 'forecast' ? 'block' : 'none';
+            document.getElementById('historicalInputs').style.display = 
+                viewType === 'historical' ? 'block' : 'none';
+        }
+        
+        async function loadData() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">⏳ Уншиж байна...</div>';
+            
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            const livestock = parseFloat(document.getElementById('livestock').value);
+            const viewType = document.getElementById('viewType').value;
+            
+            try {
+                let response;
+                if (viewType === 'forecast') {
+                    const days = parseInt(document.getElementById('days').value);
+                    response = await fetch('/api/forecast', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({lat, lon, livestock, days})
+                    });
+                } else {
+                    const startDate = document.getElementById('startDate').value;
+                    const endDate = document.getElementById('endDate').value;
+                    response = await fetch('/api/historical', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({lat, lon, livestock, start_date: startDate, end_date: endDate})
+                    });
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">❌ Алдаа: ${data.error}</div>`;
+                    return;
+                }
+                
+                displayResults(data, viewType);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">❌ Алдаа: ${error.message}</div>`;
+            }
+        }
+        
+        function displayResults(data, viewType) {
+            const resultsDiv = document.getElementById('results');
+            const items = viewType === 'forecast' ? data.forecast : data.historical;
+            const summary = data.summary;
+            
+            let html = '<div class="summary-card"><h3>📊 Дүгнэлт</h3><div class="summary-grid">';
+            
+            html += `
+                <div class="summary-item">
+                    <div class="label">Нийт өдөр</div>
+                    <div class="value">${summary.total_days}</div>
+                </div>
+            `;
+            
+            if (summary.high_risk_days !== undefined) {
+                html += `
+                    <div class="summary-item">
+                        <div class="label">Өндөр эрсдэлтэй</div>
+                        <div class="value" style="color: #f44336;">${summary.high_risk_days}</div>
+                    </div>
+                `;
+            }
+            
+            if (summary.avg_risk_score !== undefined) {
+                html += `
+                    <div class="summary-item">
+                        <div class="label">Дундаж эрсдэл</div>
+                        <div class="value">${summary.avg_risk_score}/100</div>
+                    </div>
+                `;
+            }
+            
+            if (summary.coldest_day) {
+                html += `
+                    <div class="summary-item">
+                        <div class="label">🥶 Хамгийн хүйтэн</div>
+                        <div class="value">${summary.coldest_day.temp}°C</div>
+                        <div class="label">${summary.coldest_day.date}</div>
+                    </div>
+                `;
+            }
+            
+            if (summary.windiest_day) {
+                html += `
+                    <div class="summary-item">
+                        <div class="label">💨 Хамгийн салхитай</div>
+                        <div class="value">${summary.windiest_day.wind} м/с</div>
+                        <div class="label">${summary.windiest_day.date}</div>
+                    </div>
+                `;
+            }
+            
+            if (summary.soum) {
+                html += `
+                    <div class="summary-item">
+                        <div class="label">📍 Байршил</div>
+                        <div class="value" style="font-size: 1.2em;">${summary.soum}</div>
+                    </div>
+                `;
+            }
+            
+            html += '</div></div>';
+            
+            html += '<div class="daily-list">';
+            
+            items.forEach(day => {
+                const riskClass = `risk-${day.risk_level}`;
+                html += `
+                    <div class="day-card ${riskClass}">
+                        <div class="day-header">
+                            <div class="day-date">${day.date} (${day.day_name})</div>
+                            <div class="risk-badge ${riskClass}">${day.risk_label} ${day.risk_score}/100</div>
+                        </div>
+                        <div class="day-details">
+                            <div class="detail-item">
+                                <span class="icon">🌡️</span>
+                                ${viewType === 'forecast' ? 
+                                    `${day.temp_min}°C ~ ${day.temp_max}°C` : 
+                                    `${day.temp_min}°C (дундаж: ${day.temp_avg}°C)`}
+                            </div>
+                            <div class="detail-item">
+                                <span class="icon">💨</span>
+                                ${viewType === 'forecast' ? day.wind_max : day.wind_speed} м/с
+                            </div>
+                            ${day.snowfall > 0 ? `
+                                <div class="detail-item">
+                                    <span class="icon">❄️</span>
+                                    ${day.snowfall} мм цас
+                                </div>
+                            ` : ''}
+                            ${day.precip > 0 ? `
+                                <div class="detail-item">
+                                    <span class="icon">💧</span>
+                                    ${day.precip} мм
+                                </div>
+                            ` : ''}
+                        </div>
+                        ${day.reasons && day.reasons.length > 0 ? `
+                            <div class="reasons">
+                                <strong>Шалтгаан:</strong> ${day.reasons.join(', ')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            resultsDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
