@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from risk_predictor import DzudRiskPredictor
 from daily_forecast_predictor import DailyDzudForecast
+from historical_daily_data import HistoricalDailyData
 import json
 
 app = Flask(__name__)
@@ -15,6 +16,7 @@ CORS(app)  # Enable CORS for frontend
 # Initialize predictor
 predictor = DzudRiskPredictor()
 forecaster = DailyDzudForecast()
+historical = HistoricalDailyData()
 
 @app.route('/')
 def index():
@@ -201,6 +203,81 @@ def get_forecast():
         
         return jsonify({
             'forecast': forecast_data,
+            'summary': summary
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/historical', methods=['POST'])
+def get_historical():
+    """
+    Get historical daily dzud risk data
+    
+    Request body:
+    {
+        "lat": 43.5,
+        "lon": 104.4,
+        "start_date": "2023-01-01",
+        "end_date": "2023-01-31",
+        "livestock": 200  (optional)
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        lat = float(data.get('lat', 43.57))
+        lon = float(data.get('lon', 104.43))
+        start_date = data.get('start_date', '2023-01-01')
+        end_date = data.get('end_date', '2023-01-31')
+        livestock = float(data.get('livestock', 200))
+        
+        # Get historical data
+        daily_df = historical.get_daily_data(lat, lon, start_date, end_date, livestock)
+        
+        if len(daily_df) == 0:
+            return jsonify({'error': 'No data available for this date range'}), 404
+        
+        # Convert to JSON
+        historical_data = []
+        for _, row in daily_df.iterrows():
+            historical_data.append({
+                'date': row['date'],
+                'day_name': row['day_name'],
+                'soum': row['soum'],
+                'temp_min': float(row['temp_min']),
+                'temp_avg': float(row['temp_avg']),
+                'wind_speed': float(row['wind_speed']),
+                'snowfall': float(row['snowfall']),
+                'precip': float(row['precip']),
+                'risk_score': int(row['risk_score']),
+                'risk_level': int(row['risk_level']),
+                'risk_label': row['risk_label'],
+                'risk_color': row['risk_color']
+            })
+        
+        # Summary
+        high_risk_days = int(len(daily_df[daily_df['risk_level'] >= 2]))
+        summary = {
+            'total_days': int(len(daily_df)),
+            'avg_risk_score': float(round(daily_df['risk_score'].mean(), 1)),
+            'max_risk_score': int(round(daily_df['risk_score'].max(), 0)),
+            'high_risk_days': high_risk_days,
+            'soum': str(daily_df['soum'].iloc[0])
+        }
+        
+        if len(daily_df) > 0:
+            summary['coldest_day'] = {
+                'date': str(daily_df.loc[daily_df['temp_min'].idxmin(), 'date']),
+                'temp': float(round(daily_df['temp_min'].min(), 1))
+            }
+            summary['windiest_day'] = {
+                'date': str(daily_df.loc[daily_df['wind_speed'].idxmax(), 'date']),
+                'wind': float(round(daily_df['wind_speed'].max(), 1))
+            }
+        
+        return jsonify({
+            'historical': historical_data,
             'summary': summary
         })
     
