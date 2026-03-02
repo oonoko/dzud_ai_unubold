@@ -375,20 +375,20 @@
                         <div class="map-legend">
                             <h4>🗺️ Эрсдэлийн түвшин</h4>
                             <div class="legend-item">
-                                <div class="legend-color" style="background: #10b981;"></div>
-                                <span>Бага</span>
+                                <div class="legend-color" style="background: #22c55e;"></div>
+                                <span>Бага (0-24)</span>
                             </div>
                             <div class="legend-item">
-                                <div class="legend-color" style="background: #f59e0b;"></div>
-                                <span>Дунд</span>
+                                <div class="legend-color" style="background: #eab308;"></div>
+                                <span>Дунд (25-49)</span>
                             </div>
                             <div class="legend-item">
                                 <div class="legend-color" style="background: #f97316;"></div>
-                                <span>Өндөр</span>
+                                <span>Өндөр (50-74)</span>
                             </div>
                             <div class="legend-item">
-                                <div class="legend-color" style="background: #ef4444;"></div>
-                                <span>Маш өндөр</span>
+                                <div class="legend-color" style="background: #dc2626;"></div>
+                                <span>Маш өндөр (75-100)</span>
                             </div>
                         </div>
                     </div>
@@ -484,10 +484,10 @@
         // Get color for risk level
         function getRiskColor(riskLevel) {
             const colors = {
-                0: '#10b981',  // green
-                1: '#f59e0b',  // yellow
-                2: '#f97316',  // orange
-                3: '#ef4444'   // red
+                0: '#22c55e',  // green - Бага
+                1: '#eab308',  // yellow - Дунд
+                2: '#f97316',  // orange - Өндөр
+                3: '#dc2626'   // red - Маш өндөр
             };
             return colors[riskLevel] || '#6b7280';
         }
