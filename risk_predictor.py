@@ -8,7 +8,9 @@ ML модель байвал rule-based + ML магадлалыг 50/50 нэгт
 import pandas as pd
 import numpy as np
 import joblib
-from datetime import datetime
+import requests
+from datetime import datetime, date
+from calendar import monthrange
 from typing import Dict, List, Tuple, Optional
 
 # ML загварын feature-үүд (train_model_advanced.py-тай ижил дараалал)
@@ -409,6 +411,152 @@ class DzudRiskPredictor:
             'note': 'Энэ нь туршилтын тооцоолол юм. Бодит мэдээлэл дээр үндэслэнэ үү.'
         }
         return result
+
+    # ------------------------------------------------------------------
+    # БОДИТ ЦАГ АГААРЫН ӨГӨГДӨЛ — Open-Meteo API
+    # ------------------------------------------------------------------
+
+    def fetch_real_weather(self, lat: float, lon: float, year: int, month: int) -> Optional[Dict]:
+        """
+        Open-Meteo archive API-аас тухайн сарын бодит цаг агаарын өгөгдөл татна.
+        Ирээдүйн сар бол forecast API ашиглана.
+        Буцаах: {'avg_temp', 'min_temp', 'wind_speed', 'snowfall_sum', 'precip_sum'} эсвэл None
+        """
+        today = date.today()
+        is_future = (year > today.year) or (year == today.year and month > today.month)
+        is_current = (year == today.year and month == today.month)
+
+        try:
+            if is_future or is_current:
+                # Forecast API — 16 хоног хүртэл
+                url = "https://api.open-meteo.com/v1/forecast"
+                # Сарын эхний болон сүүлийн өдрийг тооцно
+                _, days_in_month = monthrange(year, month)
+                start = date(year, month, 1)
+                end = date(year, month, days_in_month)
+                # Forecast API зөвхөн 16 хоног хүртэл — хэтэрсэн бол ERA5 ашиглана
+                days_ahead = (start - today).days
+                if days_ahead > 15:
+                    # ERA5 archive-д байхгүй ирээдүйн сар — түүхэн дундажаар fallback
+                    return None
+                params = {
+                    'latitude': lat, 'longitude': lon,
+                    'daily': ['temperature_2m_max', 'temperature_2m_min', 'temperature_2m_mean',
+                              'precipitation_sum', 'snowfall_sum', 'windspeed_10m_max'],
+                    'timezone': 'Asia/Ulaanbaatar',
+                    'start_date': str(start), 'end_date': str(end),
+                }
+            else:
+                # Archive API — түүхэн бодит өгөгдөл
+                url = "https://archive-api.open-meteo.com/v1/archive"
+                _, days_in_month = monthrange(year, month)
+                params = {
+                    'latitude': lat, 'longitude': lon,
+                    'daily': ['temperature_2m_max', 'temperature_2m_min', 'temperature_2m_mean',
+                              'precipitation_sum', 'snowfall_sum', 'windspeed_10m_max'],
+                    'timezone': 'Asia/Ulaanbaatar',
+                    'start_date': f"{year}-{month:02d}-01",
+                    'end_date': f"{year}-{month:02d}-{days_in_month:02d}",
+                }
+
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            daily = resp.json().get('daily', {})
+
+            temps_min = [v for v in daily.get('temperature_2m_min', []) if v is not None]
+            temps_mean = [v for v in daily.get('temperature_2m_mean', []) if v is not None]
+            winds = [v for v in daily.get('windspeed_10m_max', []) if v is not None]
+            snow = [v for v in daily.get('snowfall_sum', []) if v is not None]
+            precip = [v for v in daily.get('precipitation_sum', []) if v is not None]
+
+            if not temps_min:
+                return None
+
+            return {
+                'avg_temp': round(float(np.mean(temps_mean)) if temps_mean else float(np.mean(temps_min)), 2),
+                'min_temp': round(float(np.min(temps_min)), 2),
+                'wind_speed': round(float(np.mean(winds)) if winds else 0.0, 2),
+                'snowfall_sum': round(float(np.sum(snow)) if snow else 0.0, 2),
+                'precip_sum': round(float(np.sum(precip)) if precip else 0.0, 2),
+                'data_source': 'forecast' if (is_future or is_current) else 'archive',
+            }
+        except Exception as e:
+            print(f"⚠️  Open-Meteo fetch алдаа ({year}-{month:02d}): {e}")
+            return None
+
+    def predict_forecast_months(self, lat: float, lon: float, livestock: Dict, months: int = 3) -> List[Dict]:
+        """
+        Одоогийн болон ирээдүйн N сарын эрсдэлийг бодит/forecast цаг агаарын өгөгдлөөр тооцоолно.
+        Бодит өгөгдөл татаж чадахгүй бол түүхэн дундажаар fallback хийнэ.
+
+        Буцаах: list of {month, year, month_name, risk_score, risk_level, risk_label,
+                          weather, data_source, reasons}
+        """
+        location = self.find_nearest_location(lat, lon)
+        exposure_score, total_livestock_count = self.calculate_livestock_exposure(livestock)
+
+        today = date.today()
+        results = []
+
+        MONTH_NAMES = ['', 'Нэгдүгээр', 'Хоёрдугаар', 'Гуравдугаар', 'Дөрөвдүгээр',
+                       'Тавдугаар', 'Зургадугаар', 'Долдугаар', 'Наймдугаар',
+                       'Есдүгээр', 'Аравдугаар', 'Арван нэгдүгээр', 'Арван хоёрдугаар']
+
+        for i in range(months):
+            # i=0 → одоогийн сар, i=1,2,3 → ирээдүйн сарууд
+            target_month = ((today.month - 1 + i) % 12) + 1
+            target_year = today.year + ((today.month - 1 + i) // 12)
+
+            # 1. Бодит/forecast өгөгдөл татах
+            real = self.fetch_real_weather(lat, lon, target_year, target_month)
+
+            if real:
+                weather_dict = {
+                    'location': location,
+                    'month': target_month,
+                    'year': target_year,
+                    'avg_temp': real['avg_temp'],
+                    'min_temp': real['min_temp'],
+                    'wind_speed': real['wind_speed'],
+                    'snowfall_sum': real['snowfall_sum'],
+                    'precip_sum': real['precip_sum'],
+                }
+                data_source = real['data_source']
+            else:
+                # Fallback: түүхэн дундаж
+                weather_dict = self.get_current_weather(lat, lon, month=target_month)
+                weather_dict['year'] = target_year
+                data_source = 'historical_avg'
+
+            # 2. Эрсдэл тооцоолох
+            weather_risk, reasons = self.calculate_weather_risk(weather_dict)
+            risk = self.calculate_final_risk(weather_risk, exposure_score)
+
+            # 3. ML hybrid (түүхэн жилийн өгөгдлөөр — ирээдүйд ML feature байхгүй тул skip)
+            risk['ml_probability'] = None
+            risk['risk_source'] = 'rule_based_realtime'
+
+            results.append({
+                'month': target_month,
+                'year': target_year,
+                'month_name': MONTH_NAMES[target_month],
+                'is_current': i == 0,
+                'risk_score': risk['score'],
+                'risk_level': risk['level'],
+                'risk_label': risk['label'],
+                'risk_color': risk['color'],
+                'weather': {
+                    'avg_temp': weather_dict['avg_temp'],
+                    'min_temp': weather_dict['min_temp'],
+                    'wind_speed': weather_dict['wind_speed'],
+                    'snowfall_sum': weather_dict['snowfall_sum'],
+                    'precip_sum': weather_dict['precip_sum'],
+                },
+                'data_source': data_source,
+                'reasons': reasons[:3],
+            })
+
+        return results
 
 
 # Example usage

@@ -8,7 +8,7 @@ import pandas as pd
 import time
 from meteostat import Point, Daily
 
-soums = pd.read_csv("soum_list.csv")
+soums = pd.read_csv("soum_list_full.csv")
 
 start = datetime(2015, 1, 1)
 end   = datetime(2024, 12, 31)
